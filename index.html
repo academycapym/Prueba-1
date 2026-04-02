@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movistar - Dashboard & Academia Nacional</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { movistar: { blue: '#019DF4', dark: '#0B2739', green: '#5CB615', grey: '#86888C', light: '#F6F6F6', red: '#E63780' } },
+                    fontFamily: { sans: ['Telefonica', 'Montserrat', 'Segoe UI', 'sans-serif'], }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #F6F6F6; color: #0B2739; }
+        .modal-overlay { background-color: rgba(11, 39, 57, 0.8); backdrop-filter: blur(8px); }
+        .ai-gradient { background: linear-gradient(135deg, #019DF4 0%, #5CB615 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        input[type="file"] { display: none; } 
+        .tab-btn { padding: 12px 20px; font-size: 13px; font-weight: 700; cursor: pointer; border-bottom: 4px solid transparent; transition: all 0.3s; white-space: nowrap; }
+        .tab-active { border-bottom-color: #5CB615; color: #5CB615; background: #fff; }
+        .tab-inactive { color: #86888C; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .medal-gold { color: #FFD700; filter: drop-shadow(0 0 3px gold); }
+        .medal-silver { color: #C0C0C0; filter: drop-shadow(0 0 3px silver); }
+        .medal-bronze { color: #CD7F32; filter: drop-shadow(0 0 3px #CD7F32); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+
+        // --- FIREBASE CONFIG (Tu proyecto academia-capym) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA7jT_0uOIW17wrkqqar97WZdc8qvuoKGI",
+            authDomain: "academia-capym.firebaseapp.com",
+            projectId: "academia-capym",
+            storageBucket: "academia-capym.firebasestorage.app",
+            messagingSenderId: "261815103883",
+            appId: "1:261815103883:web:aa66d0b8d1b733195bff8e",
+            measurementId: "G-YZVF86MR63"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // --- BANCOS DE PREGUNTAS ---
+        const BANK_BASICO = [
+            { q: "¿Cuál es el objetivo principal de la Portabilidad?", options: ["Conservar el número actual al cambiar de compañía.", "Tener un número temporal.", "Dar de baja la línea.", "Fusionar saldos."], ans: 0 },
+            { q: "¿Quién está autorizado para solicitar la portabilidad?", options: ["Cualquier familiar.", "El titular de la línea con identificación.", "El promotor.", "Quien tenga el chip físico."], ans: 1 },
+            { q: "¿Cuál es la vigencia del NIP de Portabilidad?", options: ["24 horas.", "5 días hábiles.", "15 días.", "5 días naturales."], ans: 3 },
+            { q: "¿Qué organismo regula el proceso y valida los datos?", options: ["Operador Receptor.", "Operador Donador.", "El ABD (Administrador de Base de Datos).", "Back Office."], ans: 2 },
+            { q: "¿Qué significa FVC?", options: ["Firma de Validación.", "Fecha de Ventana de Cambio.", "Formulario de Venta.", "Folio Comercial."], ans: 1 },
+            { q: "¿Cuántos dígitos componen el número de serie (ICC) de la SIM?", options: ["10 dígitos.", "15 dígitos.", "19 dígitos.", "13 caracteres."], ans: 2 },
+            { q: "Si ingresas la CURP en Datos Personales, ¿qué paso te ahorras?", options: ["Ingresar el NIP.", "Aprobación automática.", "Tomar fotos de la Identificación Oficial.", "Escanear el ICC."], ans: 2 },
+            { q: "Si el número pertenece a una Persona Moral (empresa), ¿qué ocurre?", options: ["Tarda 48 horas más.", "El ABD rechaza el trámite.", "Pide el acta constitutiva.", "Pasa normal."], ans: 1 },
+            { q: "En la App, ¿qué dominio debes seleccionar al iniciar sesión?", options: ["Externo.", "Local.", "Movistar.", "Red_Prepago."], ans: 1 },
+            { q: "Trámite 'Rechazado por ABD' por NIP incorrecto. ¿Qué haces?", options: ["Mandar correo para cancelar.", "Pedir nuevo NIP y usar 'Reinyección'.", "Crear trámite nuevo.", "Reiniciar el teléfono."], ans: 1 },
+            { q: "Para cancelar un proceso por arrepentimiento, ¿cuándo debe hacerse?", options: ["Después de la FVC.", "Antes de la FVC enviando carta e ID por correo.", "Con un botón en la App.", "Dejando de recargar."], ans: 1 },
+            { q: "¿Qué significa 'Rechazada por el Back Office'?", options: ["Trámite cancelado.", "Error visual en fotos de identificación, reinyectar.", "El cliente no contestó la llamada.", "NIP expirado."], ans: 1 }
+        ];
+
+        const BANK_EXPERTO = [
+            { q: "Error 'Code: 3059' o 'SYS001001'. ¿Qué significa?", options: ["El número ya está en otro proceso. Esperar al 6to día.", "El NIP es incorrecto.", "El chip está dañado.", "La línea está suspendida."], ans: 0 },
+            { q: "¿A qué correos se envía la petición de cancelación antes de FVC?", options: ["fernanda.carrillo@atento y blanca.armenta@atento", "soporte@movistar.com", "En la App.", "Al ABD."], ans: 0 },
+            { q: "Si el ABD rechaza por 'NIP inexistente o incorrecto', ¿qué debes hacer?", options: ["Usar el menú de 'Reinyección' para modificarlo.", "Crear portabilidad desde cero.", "Mandar correo.", "Esperar 24 horas."], ans: 0 },
+            { q: "¿Qué significa el estado 'En espera de envío' en Ónix?", options: ["En revisión por parte del BO Prepago.", "ABD validando NIP.", "Esperando recarga.", "Portabilidad ejecutada."], ans: 0 },
+            { q: "En reinyección, error 'Order number does not exist'. ¿Qué procede?", options: ["Crear un trámite nuevo de importación.", "Reiniciar el equipo.", "Pedir NIP de nuevo.", "Llamar a BO."], ans: 0 },
+            { q: "Cliente presenta 'Servicio de las dos compañías'. ¿Acción?", options: ["Escalar a 2L indicando ID proveedor, IDPV, DN, ICC.", "Recargar $50.", "Esperar 24 hrs.", "Reinyectar."], ans: 0 },
+            { q: "Cliente NO recibe llamadas de su compañía anterior. ¿Qué procede?", options: ["Escalar a 2L para revisar el enrutamiento.", "Ir al CAC a dar de baja el chip.", "Esperar 48 hrs.", "Portar de regreso."], ans: 0 },
+            { q: "¿Qué valida a un cliente como 'Suscriptor Prepago'?", options: ["Presentar línea e Identificación Oficial.", "Conocer el NIP.", "Tener la factura.", "Traer el plástico del chip."], ans: 0 },
+            { q: "'Versión de APP no aceptada'. ¿De dónde descargar la actual?", options: ["asistentemovistar.com.mx/login", "Play Store.", "WhatsApp.", "Portal interno."], ans: 0 },
+            { q: "Error 'La SIM ya fue utilizada'. ¿Solución?", options: ["Intentar captura nuevamente o usar otra SIM/ICC.", "Escalar a 2L.", "Llamar al *611.", "Correo a BO."], ans: 0 },
+            { q: "Al pedir informe: 'No lanzar la misma consulta dos veces'. ¿Espera?", options: ["5 minutos.", "24 horas.", "1 minuto.", "No hay límite."], ans: 0 },
+            { q: "Cliente conservará su equipo liberado. ¿Tipo de Equipo a seleccionar?", options: ["Externo.", "Interno.", "Smartphone.", "BYOD."], ans: 0 },
+            { q: "¿Qué significa 'En espera de validación del ABD'?", options: ["ABD validando aceptación/rechazo.", "BO revisando fotos.", "Portabilidad lista.", "Confirmar SMS."], ans: 0 },
+            { q: "Línea pertenece a Persona Moral. ¿Qué sucederá?", options: ["Rechazada por el ABD.", "Pasa normal.", "Tarda más.", "Pide acta en App."], ans: 0 },
+            { q: "¿Quién confirma al Receptor la aceptación/rechazo?", options: ["El ABD.", "El Operador Donador.", "Back Office.", "El cliente."], ans: 0 },
+            { q: "Motivo de rechazo por Back Office:", options: ["Fotos borrosas o incorrectas.", "NIP expirado.", "SIM robada.", "Rechazo de cliente."], ans: 0 },
+            { q: "Para escalar a 2L problemas técnicos, ¿qué 4 datos urgen?", options: ["ID proveedor, IDPV, DN, ICC.", "Nombre, CURP, DN, NIP.", "Folio, FVC, Marca, IMEI.", "Correo, Contraseña, DN, ICC."], ans: 0 },
+            { q: "¿Cuál es la regla para solicitar NIP marcando al 051?", options: ["Solo se puede llamar en 2 ocasiones durante la vigencia.", "Ilimitado.", "Cuesta $1 peso.", "Solo con saldo."], ans: 0 },
+            { q: "¿De cuántos dígitos se compone el NIP?", options: ["4 dígitos.", "6 dígitos.", "10 dígitos.", "15 dígitos."], ans: 0 },
+            { q: "¿Cuáles son los horarios de BO para cancelaciones?", options: ["9:00 a 17:00 hrs. de lunes a sábado.", "24 horas.", "8:00 a 20:00 hrs.", "9:00 a 14:00 hrs."], ans: 0 }
+        ];
+
+        const BANK_VENTAS = [
+            { q: "¿Cuál es el objetivo principal de la Venta Consultiva?", options: ["Descubrir la necesidad real del cliente para ofrecer la solución ideal.", "Vender el equipo más caro.", "Hablar sin parar.", "Despachar rápido."], ans: 0 },
+            { q: "¿Qué es una característica de un producto?", options: ["Un dato técnico (ej. Batería de 5000 mAh).", "El uso que se le da.", "La ventaja frente a la competencia.", "El ahorro de dinero."], ans: 0 },
+            { q: "¿Qué es un beneficio para el cliente?", options: ["Lo que el producto hace por él (ej. 'Te dura todo el día').", "La memoria RAM.", "El precio.", "La garantía."], ans: 0 },
+            { q: "¿Para qué se utilizan las 'Preguntas Abiertas'?", options: ["Para que el cliente hable y obtener mucha información.", "Para responder Sí o No.", "Para forzar el cierre.", "Intimidar a la competencia."], ans: 0 },
+            { q: "¿Para qué se utilizan las 'Preguntas Cerradas'?", options: ["Para confirmar información y llevar al cliente a una decisión.", "Para indagar por qué entró a la tienda.", "Romper el hielo.", "Conocer pasatiempos."], ans: 0 },
+            { q: "Una 'Objeción' del cliente es:", options: ["Una duda o barrera temporal, no un 'NO' definitivo.", "Un rechazo total a tu persona.", "Una grosería.", "Una excusa para irse."], ans: 0 },
+            { q: "¿Cuál es el mejor método para rebatir una objeción?", options: ["Escuchar, Empatizar, Resolver la duda y Confirmar.", "Ignorarla.", "Enojarte.", "Ofrecer descuento inmediato."], ans: 0 },
+            { q: "Si el cliente asiente y pregunta '¿Qué necesito para hacer el trámite?', es:", options: ["Señal de Compra.", "Señal de Rechazo.", "Señal de Duda.", "Objeción."], ans: 0 },
+            { q: "¿Qué es el Cierre de Ventas?", options: ["La pregunta directa o acción que concreta el trato.", "Despedir al cliente.", "El saludo inicial.", "Explicar las características."], ans: 0 },
+            { q: "Si el cliente compra un equipo y le ofreces protector y audífonos, haces:", options: ["Venta Cruzada (Cross-Selling).", "Up-Selling.", "Portabilidad.", "Manejo de objeciones."], ans: 0 },
+            { q: "Si convences al cliente de llevar un plan superior al que buscaba, es:", options: ["Up-Selling.", "Cross-Selling.", "Servicio al cliente.", "Engaño."], ans: 0 },
+            { q: "¿Cuál es el primer paso del abordaje en punto de venta?", options: ["Saludo cordial, contacto visual y sonrisa.", "Preguntarle si trae dinero.", "Pedirle su NIP.", "Darle un volante."], ans: 0 },
+            { q: "¿Por qué es importante el seguimiento post-venta?", options: ["Fidelizarlo y conseguir referidos.", "Para cobrarle.", "Por protocolo.", "Para mandar correos."], ans: 0 },
+            { q: "En la Escucha Activa, es fundamental:", options: ["No interrumpir al cliente y prestar atención total.", "Revisar el celular.", "Contestar antes que termine.", "Mirar hacia otro lado."], ans: 0 },
+            { q: "¿Qué actitud tomar ante un cliente molesto?", options: ["Mantener la calma, escuchar y no tomarlo personal.", "Gritar más fuerte.", "Ignorarlo.", "Llamar a seguridad."], ans: 0 }
+        ];
+
+        // --- ICONOS ---
+        const IconClock = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
+        const IconTrendingUp = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+        const IconBox = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>;
+        const IconTrophy = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+        const IconMedal = ({ type }) => {
+            const classes = type === 'EXPERTO' ? 'medal-gold' : (type === 'VENTAS' ? 'medal-silver' : 'medal-bronze');
+            return <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" className={classes}><path d="M12 15c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6z"/><path d="M8.21 16.5l-1.96 5.36c-.19.52.39.95.84.65l4.91-3.27 4.91 3.27c.45.3.1.83-.84.65l-1.96-5.36c-1.39.95-3.09 1.5-4.89 1.5-1.8 0-3.5-.55-4.89-1.5z"/></svg>;
+        };
+
+        const App = () => {
+            const [userRole, setUserRole] = useState("MAESTRO"); 
+            const [activeTab, setActiveTab] = useState("CAPACITACION"); 
+            const [playerName, setPlayerName] = useState("");
+            
+            // Operación
+            const [dataTEMM, setDataTEMM] = useState([]);
+            const [dataINV, setDataINV] = useState([]);
+            const [isLoadedTEMM, setIsLoadedTEMM] = useState(false);
+            const [isLoadedINV, setIsLoadedINV] = useState(false);
+            
+            // Filtros Operación
+            const [supFilter, setSupFilter] = useState("Todos");
+            const [cadFilter, setCadFilter] = useState("Todas");
+            const [sortOrder, setSortOrder] = useState("gap_desc");
+            const [marcaFilter, setMarcaFilter] = useState("Todas");
+            const [modeloFilter, setModeloFilter] = useState("Todos");
+
+            // Examen
+            const [quizState, setQuizState] = useState('MENU'); 
+            const [quizQuestions, setQuizQuestions] = useState([]);
+            const [currentQIndex, setCurrentQIndex] = useState(0);
+            const [userAnswers, setUserAnswers] = useState([]);
+            const [timeLeft, setTimeLeft] = useState(180); 
+            const [quizType, setQuizType] = useState(''); 
+            const [ranking, setRanking] = useState([]);
+
+            const cleanID = (id) => String(id || "").trim().replace(/^0+/, '');
+
+            // ==========================================
+            // FIREBASE LÓGICA (RANKING)
+            // ==========================================
+            useEffect(() => {
+                const unsub = db.collection("ranking").orderBy("score", "desc").onSnapshot(snap => {
+                    setRanking(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+                return () => unsub();
+            }, []);
+
+            // ==========================================
+            // EXCEL LOGIC (Resumido)
+            // ==========================================
+            const handleUploadTEMM = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const workbook = XLSX.read(event.target.result, { type: 'binary' });
+                    const sheet = workbook.Sheets[workbook.SheetNames.find(s => s.toLowerCase().includes("seg diario"))];
+                    if (!sheet) return;
+                    const json = XLSX.utils.sheet_to_json(sheet, { header: "A", defval: "" });
+                    const parsed = json.filter(row => row["J"] && row["J"].length > 2 && !row["J"].includes("PDV")).map(row => ({
+                        idpdv: cleanID(row["I"]), tienda: String(row["J"]).trim(), supervisor: String(row["B"]).trim(), cadena: String(row["L"]).toUpperCase().includes("EKT") ? "ELEKTRA" : (String(row["L"]).toUpperCase().includes("COPPEL") ? "COPPEL" : "SUBURBIA"),
+                        altas: Math.round(row["Q"] || 0), cuota: Math.round(row["R"] || 0), gap: Math.round(row["S"] || 0)
+                    }));
+                    setDataTEMM(parsed); setIsLoadedTEMM(true);
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            const handleUploadINV = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const workbook = XLSX.read(event.target.result, { type: 'binary' });
+                    const sheet = workbook.Sheets[workbook.SheetNames.find(s => s.toLowerCase().includes("tiendas"))];
+                    const json = XLSX.utils.sheet_to_json(sheet, { header: "A", defval: "" });
+                    setDataINV(json.filter(r => r["I"]).map(r => ({
+                        idpdv: cleanID(r["I"]), modelo: r["T"], marca: r["U"], statusSku: r["W"], stock: parseInt(r["AG"] || 0), statusTienda: r["K"]
+                    })));
+                    setIsLoadedINV(true);
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            // ==========================================
+            // QUIZ LOGIC
+            // ==========================================
+            useEffect(() => {
+                let timer = null;
+                if (quizState === 'PLAYING' && timeLeft > 0) timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+                else if (quizState === 'PLAYING' && timeLeft === 0) setQuizState('RESULTS');
+                return () => clearInterval(timer);
+            }, [quizState, timeLeft]);
+
+            const startQuiz = (type) => {
+                if (!playerName.trim()) return alert("Ingresa tu nombre completo para iniciar.");
+                setQuizType(type);
+                let bank = type === 'BASICO' ? BANK_BASICO : (type === 'EXPERTO' ? BANK_EXPERTO : BANK_VENTAS);
+                const qCount = type === 'BASICO' ? 12 : (type === 'EXPERTO' ? 20 : 15);
+                const shuffled = bank.sort(() => 0.5 - Math.random()).slice(0, qCount).map(q => ({
+                    ...q, displayOptions: q.options.map((opt, i) => ({ text: opt, isCorrect: i === q.ans })).sort(() => 0.5 - Math.random())
+                }));
+                setQuizQuestions(shuffled); setCurrentQIndex(0); setUserAnswers([]); setTimeLeft(180); setQuizState('PLAYING');
+            };
+
+            const handleAnswer = (isCorrect) => {
+                const newAns = [...userAnswers, isCorrect];
+                setUserAnswers(newAns);
+                if (currentQIndex + 1 < quizQuestions.length) setCurrentQIndex(currentQIndex + 1);
+                else setQuizState('RESULTS');
+            };
+
+            const score = userAnswers.filter(Boolean).length;
+            const isPassed = score >= Math.ceil(quizQuestions.length * 0.8);
+            const totalPoints = (score * 5) + (isPassed ? timeLeft : 0);
+
+            useEffect(() => {
+                if (quizState === 'RESULTS' && isPassed) {
+                    const save = async () => {
+                        const name = playerName.trim().toUpperCase();
+                        const snap = await db.collection("ranking").where("name", "==", name).get();
+                        if (!snap.empty) {
+                            const doc = snap.docs[0];
+                            const currentBadges = doc.data().badges || [];
+                            await doc.ref.update({ score: doc.data().score + totalPoints, badges: Array.from(new Set([...currentBadges, quizType])) });
+                        } else {
+                            await db.collection("ranking").add({ name, score: totalPoints, badges: [quizType], role: "Promotor" });
+                        }
+                    };
+                    save();
+                }
+            }, [quizState]);
+
+            // ==========================================
+            // RENDER UI
+            // ==========================================
+            const rankedData = useMemo(() => {
+                let filtered = dataTEMM.filter(d => (supFilter === "Todos" || d.supervisor === supFilter) && (cadFilter === "Todas" || d.cadena === cadFilter));
+                if (sortOrder === "gap_desc") filtered.sort((a,b) => b.gap - a.gap);
+                else if (sortOrder === "gap_asc") filtered.sort((a,b) => a.gap - b.gap);
+                return filtered.map((d, i) => {
+                    const inv = dataINV.filter(inv => inv.idpdv === d.idpdv);
+                    const filteredInv = inv.filter(i => (marcaFilter === "Todas" || i.marca === marcaFilter) && (modeloFilter === "Todos" || i.modelo === modeloFilter));
+                    return { ...d, rank: i+1, invData: filteredInv, totalInv: filteredInv.reduce((s,i) => s+i.stock, 0) };
+                });
+            }, [dataTEMM, dataINV, supFilter, cadFilter, sortOrder, marcaFilter, modeloFilter]);
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <div className="bg-movistar-dark text-white p-4 flex justify-between items-center sticky top-0 z-50 shadow-lg">
+                        <h1 className="font-extrabold text-lg">MOVISTAR <span className="font-light">ACADEMIA</span></h1>
+                        <div className="flex gap-2">
+                            <label className="bg-movistar-blue px-3 py-1.5 rounded-full text-[10px] font-bold cursor-pointer">
+                                {isLoadedTEMM ? "TEMM ✅" : "SUBIR DIARIO"}
+                                <input type="file" accept=".xlsx, .xls" onChange={handleUploadTEMM}/>
+                            </label>
+                            {userRole === "MAESTRO" && (
+                                <label className="bg-white/10 px-3 py-1.5 rounded-full text-[10px] font-bold cursor-pointer border border-white/20">
+                                    {isLoadedINV ? "INV ✅" : "SUBIR INV"}
+                                    <input type="file" accept=".xlsx, .xls" onChange={handleUploadINV}/>
+                                </label>
+                            )}
+                            <select className="bg-[#113a54] text-[10px] font-bold p-1 rounded border border-white/20 outline-none" value={userRole} onChange={e => setUserRole(e.target.value)}>
+                                <option value="PROMOTOR">PROMOTOR</option>
+                                <option value="MAESTRO">MAESTRO</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="bg-white flex overflow-x-auto border-b border-gray-200 sticky top-[58px] z-40">
+                        <button className={`tab-btn ${activeTab === 'CAPACITACION' ? 'tab-active' : 'tab-inactive'}`} onClick={() => setActiveTab('CAPACITACION')}>ACADEMIA</button>
+                        <button className={`tab-btn ${activeTab === 'RANKING' ? 'tab-active' : 'tab-inactive'}`} onClick={() => setActiveTab('RANKING')}>RANKING</button>
+                        {userRole === "MAESTRO" && isLoadedTEMM && (
+                            <button className={`tab-btn ${activeTab === 'OP' ? 'tab-active' : 'tab-inactive'}`} onClick={() => setActiveTab('OP')}>OPERACIÓN</button>
+                        )}
+                    </div>
+
+                    <div className="p-4 md:p-8 max-w-7xl mx-auto w-full flex-grow">
+                        {activeTab === 'CAPACITACION' && (
+                            <div className="animate-fade-in flex flex-col items-center">
+                                {quizState === 'MENU' && (
+                                    <div className="bg-white p-8 rounded-3xl shadow-md border w-full max-w-2xl text-center">
+                                        <h2 className="text-2xl font-extrabold mb-4">Certificaciones Movistar</h2>
+                                        <input type="text" placeholder="NOMBRE COMPLETO" className="w-full bg-gray-50 border-2 rounded-xl p-3 mb-8 text-center font-bold" value={playerName} onChange={e => setPlayerName(e.target.value)}/>
+                                        <div className="grid gap-4">
+                                            <button onClick={() => startQuiz('BASICO')} className="bg-movistar-blue text-white p-4 rounded-xl font-bold">PORTA BÁSICO (12 Q)</button>
+                                            <button onClick={() => startQuiz('EXPERTO')} className="bg-movistar-dark text-white p-4 rounded-xl font-bold">PORTA EXPERTO (20 Q)</button>
+                                            <button onClick={() => startQuiz('VENTAS')} className="bg-movistar-green text-white p-4 rounded-xl font-bold">VENTA CONSULTIVA (15 Q)</button>
+                                        </div>
+                                    </div>
+                                )}
+                                {quizState === 'PLAYING' && (
+                                    <div className="bg-white p-6 rounded-3xl shadow-md border w-full max-w-2xl">
+                                        <div className="flex justify-between mb-6">
+                                            <span className="text-xs font-bold text-gray-400 uppercase">P {currentQIndex+1}/{quizQuestions.length}</span>
+                                            <span className={`text-lg font-extrabold ${timeLeft < 30 ? 'text-red-500' : ''}`}>{formatTime(timeLeft)}</span>
+                                        </div>
+                                        <h3 className="text-xl font-bold mb-6">{quizQuestions[currentQIndex].q}</h3>
+                                        <div className="grid gap-3">
+                                            {quizQuestions[currentQIndex].displayOptions.map((o,i) => (
+                                                <button key={i} onClick={() => handleAnswer(o.isCorrect)} className="text-left p-4 rounded-xl border-2 hover:bg-blue-50 hover:border-movistar-blue font-semibold transition-all">{o.text}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {quizState === 'RESULTS' && (
+                                    <div className="bg-white p-8 rounded-3xl shadow-md border text-center w-full max-w-lg">
+                                        <div className={`w-32 h-32 rounded-full border-8 mx-auto flex items-center justify-center mb-6 ${isPassed ? 'border-movistar-green text-movistar-green' : 'border-movistar-red text-movistar-red'}`}>
+                                            <span className="text-4xl font-extrabold">{score}</span>
+                                        </div>
+                                        <p className="text-2xl font-bold mb-2">{isPassed ? "¡CERTIFICADO!" : "INTENTA DE NUEVO"}</p>
+                                        <p className="text-gray-500 mb-6">Puntaje total: <span className="font-bold text-movistar-dark">{totalPoints} pts</span></p>
+                                        <button onClick={() => setQuizState('MENU')} className="bg-movistar-dark text-white px-8 py-3 rounded-xl font-bold">REGRESAR</button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'RANKING' && (
+                            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-gray-50 text-[10px] uppercase font-bold text-gray-400">
+                                        <tr><th className="p-4">POS</th><th className="p-4">NOMBRE</th><th className="p-4 text-center">MEDALLAS</th><th className="p-4 text-right">PUNTOS</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {ranking.map((u, i) => (
+                                            <tr key={u.id} className="border-b border-gray-100">
+                                                <td className="p-4 font-bold">#{i+1}</td>
+                                                <td className="p-4 font-bold">{u.name}</td>
+                                                <td className="p-4 text-center flex justify-center gap-1">
+                                                    {u.badges && u.badges.map(b => <IconMedal key={b} type={b}/>)}
+                                                </td>
+                                                <td className="p-4 text-right font-extrabold text-movistar-blue text-lg">{u.score}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {activeTab === 'OP' && (
+                            <div className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {rankedData.map(d => (
+                                    <div key={d.idpdv} className="bg-white p-4 rounded-xl border border-gray-200">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-[10px] font-bold bg-gray-100 px-1 rounded">#{d.rank}</span>
+                                            <span className="text-[10px] font-bold text-movistar-blue">{d.cadena}</span>
+                                        </div>
+                                        <h3 className="font-bold text-xs mb-1 truncate">{d.tienda}</h3>
+                                        <p className="text-[9px] text-gray-400 uppercase mb-3">ID: {d.idpdv}</p>
+                                        <div className="flex justify-between items-end mb-1">
+                                            <div className="text-[10px] font-bold text-movistar-green">{d.altas} ALTAS</div>
+                                            <div className="text-[9px] text-gray-400">{d.cuota} CUOTA</div>
+                                        </div>
+                                        <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden mb-3">
+                                            <div className="h-full bg-movistar-green" style={{width: `${(d.altas/d.cuota)*100}%`}}></div>
+                                        </div>
+                                        {isLoadedINV && d.invData.length > 0 && (
+                                            <div className="border-t pt-2 mt-2">
+                                                <p className="text-[9px] font-bold text-gray-500 mb-1">INV: {d.totalInv} PZS</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {d.invData.map((item,idx) => (
+                                                        <span key={idx} className={`text-[8px] font-bold px-1 rounded border ${item.statusSku === 'LINEA' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-yellow-50 text-yellow-600 border-yellow-100'}`}>
+                                                            {item.modelo}: {item.stock}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
